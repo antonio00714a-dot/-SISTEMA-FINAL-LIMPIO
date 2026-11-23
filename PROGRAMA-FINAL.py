@@ -1,79 +1,68 @@
-# PROGRAMA-FINAL.py - SISTEMA LIMPIO - SIN LLAVES EN CODIGO - LISTO PARA SUBIR YA
-# 1 archivo principal + carpeta productos/ con 6 productos - PAGA SI O SI
-import os, json, datetime, importlib.util, pathlib
+import os
+import time
+import threading
+import random
+from flask import Flask
+import google.generativeai as genai
 
-# ===== PASO 0: LLAVES SEPARADAS - NUNCA EN ESTE ARCHIVO =====
-WALLET = os.getenv("WALLET", "").strip()
-GEMINI_KEY = os.getenv("GEMINI_KEY", "").strip()
-MODELO = os.getenv("MODELO", "gemini-3.5-flash-lite").strip()
+# --- CONFIGURACION IA ---
+# Pon tu API KEY en Render como variable de entorno GOOGLE_API_KEY
+genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-if not WALLET:
-    print("[ERROR] Falta WALLET. Ponla en Render -> Environment")
-    WALLET = "0xaEb77E40ebCF3e8e7Faf80d13615a4Dd65cD682d"
+# --- TUS PROMPTS ---
+pl = {
+    "prompt_ia": """
+Eres un experto en creación de tiendas de productos digitales.
+Dominio: {dominio}
+Tema: {tema}
+Título de la tienda: {titulo}
+Idioma: {idioma}
 
-if not GEMINI_KEY:
-    print("[AVISO] Falta GEMINI_KEY. Ponla en Render -> Environment para que genere.")
+Genera una descripción de tienda digital lista para vender, con 3 productos, precios y beneficios.
+"""
+}
 
-# ===== CARGAR 6 PRODUCTOS DE carpeta productos/ =====
-PRODUCTOS = {}
-productos_path = pathlib.Path(__file__).parent / "productos"
-for py_file in productos_path.glob("*.py"):
-    spec = importlib.util.spec_from_file_location(py_file.stem, py_file)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if hasattr(mod, "PRODUCT"):
-        PRODUCTOS[mod.PRODUCT["id"]] = mod.PRODUCT
+# --- FUNCION QUE CREA LA TIENDA ---
+def crear_tienda():
+    # Estos datos luego los puedes poner aleatorios o desde Telegram
+    dominio = "productosdigitales.com"
+    tema = random.choice(["marketing digital", "fitness", "finanzas", "ia"])
+    titulo = f"Tienda X402 de {tema}"
+    idioma = "español"
 
-_TX = set()
-
-def verificar_pago(monto, precio, tx):
-    if not tx:
-        return {"ok": False, "error": "TX vacia - esperando blockchain"}
-    if tx in _TX:
-        return {"ok": False, "error": "TX duplicada"}
-    if monto < precio - 0.01:
-        return {"ok": False, "error": f"Monto incompleto {monto} < {precio}"}
-    _TX.add(tx)
-    return {"ok": True}
-
-def generar(producto_id, dominio="", tema="", titulo="", idioma="es"):
-    p = PRODUCTOS.get(producto_id)
-    if not p:
-        return f"Producto no existe. Usa: {list(PRODUCTOS.keys())}"
-    if not GEMINI_KEY:
-        return json.dumps({"error": "Falta GEMINI_KEY en Render"}, ensure_ascii=False)
+    # ESTA ES LA LINEA 45 QUE FALLABA, YA CORREGIDA
     prompt = pl["prompt_ia"].format(dominio=dominio, tema=tema, titulo=titulo, idioma=idioma)
+    
+    print(f"Generando tienda: {titulo}...")
     try:
-        from google import genai
-        client = genai.Client(api_key=GEMINI_KEY)
-        r = client.models.generate_content(model=MODELO, contents=prompt)
-        return r.text
+        response = model.generate_content(prompt)
+        print("--- TIENDA GENERADA ---")
+        print(response.text[:500])
+        print("-----------------------")
+        # Aquí va tu lógica para guardarla / subirla / mandarla a Telegram
     except Exception as e:
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        print(f"Error generando: {e}")
 
-def vender(producto_id, monto, tx, dominio="", tema="", titulo="", idioma="es"):
-    p = PRODUCTOS.get(producto_id)
-    if not p:
-        return {"ok": False, "error": "Producto no existe"}
-    v = verificar_pago(monto, p["precio"], tx)
-    if not v["ok"]:
-        return {"ok": False, "verificacion": v}
-    contenido = generar(producto_id, dominio=dominio, tema=tema, titulo=titulo, idioma=idioma)
-    return {"ok": True, "producto": p["nombre"], "precio": p["precio"], "wallet": WALLET, "contenido": contenido, "fecha": datetime.datetime.now().isoformat()}
-
-def listar():
-    print("="*60)
-    print("SISTEMA FINAL LIMPIO - 6 PRODUCTOS - PAGA SI O SI")
-    print("="*60)
-    print(f"Wallet: {WALLET[:6]}...{WALLET[-4:]} - Modelo: {MODELO}")
-    print(f"GEMINI_KEY: {'OK separada' if GEMINI_KEY else 'FALTA en Render'}")
-    for k, v in PRODUCTOS.items():
-        print(f" - {k} | ${v['precio']} | {v['nombre']}")
-    print("="*60)
-
-if __name__ == "__main__":
-    listar()
-    print("\nSERVIDOR LISTO 24/7 - ESPERANDO PAGOS...")
-    import time
+# --- BUCLE INFINITO DEL BOT ---
+def run_bot():
+    print("BOT DE TIENDAS X402 INICIADO...")
     while True:
-        time.sleep(60)
+        crear_tienda()
+        print("Esperando 1 hora para la siguiente tienda...")
+        time.sleep(3600) # 1 hora
+
+# --- SERVIDOR WEB PARA QUE RENDER NO LO APAGUE ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "TIENDA-X402 BOT ACTIVO Y GENERANDO TIENDAS 24/7"
+
+# --- ARRANQUE FINAL ---
+if __name__ == "__main__":
+    # El bot corre en segundo plano
+    threading.Thread(target=run_bot, daemon=True).start()
+    # El servidor web corre en el puerto que pide Render
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
