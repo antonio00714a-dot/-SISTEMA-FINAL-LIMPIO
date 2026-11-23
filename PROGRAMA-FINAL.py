@@ -42,7 +42,7 @@ def generar(producto_id, dominio="", tema="", titulo="", idioma="es"):
         return f"Producto no existe. Usa: {list(PRODUCTOS.keys())}"
     if not GEMINI_KEY:
         return json.dumps({"error": "Falta GEMINI_KEY en Render"}, ensure_ascii=False)
-    prompt = p["prompt_ia"].format(dominio=dominio, tema=tema, titulo=titulo, idioma=idioma, dominio=dominio)
+    prompt = pl["prompt_ia"].format(dominio=dominio, tema=tema, titulo=titulo, idioma=idioma)
     try:
         from google import genai
         client = genai.Client(api_key=GEMINI_KEY)
